@@ -59,3 +59,83 @@ for name in ["paraphrase-multilingual-MiniLM-L12-v2",
 ```
 > `MiniLM-L12` — 384 размерность, 80MB, быстрая
 > `mpnet-base` — 768 размерность, 420MB, точнее
+---
+
+### Генерация эмбеддингов
+```
+embeddings = {}
+for name, model in models.items():
+    embeddings[name] = model.encode(
+        corpus_texts,
+        show_progress_bar=True,
+        batch_size=32
+    )
+```
+> Превращаем 200 фрагментов кода в матрицы чисел
+> MiniLM → (200, 384), mpnet → (200, 768)
+---
+
+### Функция поиска 
+```
+def search(query, model, corpus_emb, top_k=3):
+    q_emb = model.encode([query])
+    sim = cosine_similarity(q_emb, corpus_emb)[0]
+    idx = np.argsort(sim)[::-1][:top_k]
+    return idx, sim[idx]
+```
+> Косинусное сходство между запросом и всеми фрагментами
+> Сортируем по убыванию → берём топ-3
+---
+
+### Тестирование и расчет Precision@3
+```
+results = {}
+for name, model in models.items():
+    results[name] = []
+    for i, q in enumerate(queries):
+        idx, _ = search(q, model, embeddings[name])
+        found = [corpus_ids[j] for j in idx]
+        results[name].append({
+            'query': q,
+            'correct': correct_ids[i],
+            'found': found,
+            'ok': correct_ids[i] in found
+        })
+    ok = sum(1 for r in results[name] if r['ok'])
+    print(f"{name}: Precision@3 = {ok/len(queries):.2%}")
+```
+> Для каждого вопроса проверяем: попал ли правильный ID в топ-3?
+> Precision@3 = доля вопросов, где ответ найден
+---
+
+### t-SNE визуализация
+```
+best = embeddings["paraphrase-multilingual-mpnet-base-v2"]
+tsne = TSNE(n_components=2, random_state=42, perplexity=30)
+coords = tsne.fit_transform(best)
+
+colors = {'auth': '#E74C3C', 'database': '#3498DB', 
+          'http': '#2ECC71', 'validation': '#F39C12', 
+          'utils': '#9B59B6'}
+
+for cat, color in colors.items():
+    mask = [c == cat for c in corpus_categories]
+    plt.scatter(coords[mask, 0], coords[mask, 1], 
+                c=color, label=cat, alpha=0.7)
+plt.legend()
+plt.show()
+```
+> Проекция 200 векторов в 2D
+> Видно, что фрагменты одной категории лежат рядом — модель уловила смысловые кластеры
+---
+
+# Запуск проекта
+```
+# 1. Установить зависимости
+pip install -r requirements.txt
+
+# 2. Запустить Jupyter
+jupyter notebook
+
+# 3. Открыть main.ipynb и выполнить все ячейки
+```
